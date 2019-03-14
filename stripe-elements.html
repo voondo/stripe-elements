@@ -1,7 +1,6 @@
 <link rel="import" href="../polymer/polymer-element.html">
 <link rel="import" href="../polymer/lib/mixins/template-stamp.html">
 <link rel="import" href="../paper-button/paper-button.html">
-<link rel="import" href="../paper-toast/paper-toast.html">
 <link rel="import" href="../paper-icon-button/paper-icon-button.html">
 <link rel="import" href="./stripe-elements-custom-styles.html">
 
@@ -12,13 +11,13 @@
         display: block;
         flex: 1;
         min-width: var(--stripe-elements-width, 300px);
-        min-height: var(--stripe-elements-height, 50px);
+        min-height: var(--stripe-elements-height, 34px);
       }
 
-      paper-toast {
-        margin: 0;
-        max-width: 100%;
-        display: flex;
+      #error {
+        
+        color: var(--paper-input-container-invalid-color, var(--error-color));
+        @apply --stripe-elements-error;
       }
 
     </style>
@@ -31,7 +30,7 @@
             <!-- Stripe will inject form here -->
           </div>
 
-          <input type="hidden" name="stripeToken" value="[[token]]">
+          <input type="hidden" name="stripeSource" value="[[source]]">
 
         </form>
       </div>
@@ -41,14 +40,6 @@
 
     <div id="error">[[error.message]]</div>
 
-    <paper-toast id="toast"
-        text="[[error.message]]"
-        duration="Infinity"
-        opened="{{toastOpened}}"
-        no-overlap
-        vertical-align="bottom">
-      <paper-button toggles active="{{toastOpened}}">OK</paper-button>
-    </paper-toast>
   </template>
   <script>
   /**
@@ -61,9 +52,9 @@
    *   <paper-input label="Stripe Publishable Key" value="{{key}}"></paper-input>
    *   <stripe-elements
    *       publishable-key="[[key]]"
-   *       token="{{token}}"
+   *       source="{{source}}"
    *   ></stripe-elements>
-   *   <show-json hide-copy-button json="[[token]]"></show-json>
+   *   <show-json hide-copy-button json="[[source]]"></show-json>
    * ```
    *
    * ## Styling
@@ -157,7 +148,7 @@
    * @customElement
    * @extends Polymer.Element
    * @appliesMixin Polymer.TemplateStamp
-   * @fires 'stripe-token'
+   * @fires 'stripe-source'
    * @fires 'stripe-error'
    */
   class StripeElements extends Polymer.TemplateStamp(Polymer.Element) {
@@ -185,8 +176,8 @@
         },
 
         /**
-         * Card billing info to be passed to createToken() (optional)
-         * More information here https://stripe.com/docs/stripe-js/reference#stripe-create-token
+         * Card billing info to be passed to createSource() (optional)
+         * More information here https://stripe.com/docs/stripe-js/reference#stripe-create-source
          * @type {Object}
          */
         cardData: {
@@ -247,8 +238,7 @@
         error: {
           type: String,
           notify: true,
-          readOnly: true,
-          observer: 'errorChanged',
+          readOnly: true
         },
 
         /**
@@ -279,6 +269,7 @@
           type: Boolean,
           value: false,
           readOnly: true,
+          notify: true,
         },
 
         /**
@@ -335,8 +326,8 @@
           value: false,
         },
 
-        /** Stripe token. */
-        token: {
+        /** Stripe source. */
+        source: {
           type: Object,
           notify: true,
           readOnly: true,
@@ -348,6 +339,12 @@
           value: () => ({}),
         },
 
+        /** Error message **/
+        invalidCardMessage: {
+          type: String,
+          value: "Credit card information is invalid."
+        },
+
       };
     }
 
@@ -356,20 +353,6 @@
       this._setMountElementId(this.generateRandomMountElementId());
       this.prepare({shady: !!window.ShadyDOM});
       if (this.publishableKey) this.publishableKeyChanged(this.publishableKey);
-    }
-
-    /**
-     * Opens the toast with the error message
-     * @param  {Object} error Stripe error.
-     * @protected
-     */
-    errorChanged(error) {
-      if (error) {
-        this.$.toast.open();
-        this.$.toast.positionTarget = this;
-      } else {
-        this.$.toast.close();
-      }
     }
 
     /**
@@ -390,7 +373,7 @@
       return retVal;
     }
     /**
-     * Sets the error and opens the toast.
+     * Sets the error
      * @param  {Object} error
      * @protected
      */
@@ -403,20 +386,20 @@
     }
 
     /**
-     * Sets the token or error from the response.
+     * Sets the source or error from the response.
      * @param  {Object} response.error Stripe error
-     * @param  {Object} response.token Stripe token
+     * @param  {Object} response.source Stripe source
      * @protected
      */
-    handleResponse({error, token}) {
+    handleResponse({error, source}) {
       const bubbles = true;
       const composed = true;
       if (error) {
         this._setError(error);
         this.dispatchEvent(new ErrorEvent('stripe-error', {error, bubbles, composed}));
       } else {
-        this._setToken(token);
-        this.dispatchEvent(new CustomEvent('stripe-token', {token, bubbles, composed}));
+        this._setSource(source);
+        this.dispatchEvent(new CustomEvent('stripe-source', {source, bubbles, composed}));
         // Submit the form
         this.action && this.$.form.submit();
       }
@@ -459,7 +442,7 @@
     }
 
     /**
-     * Sets the error and opens the toast, if needed
+     * Sets the error
      * @param  {Boolean}       event.empty     true if value is empty
      * @param  {Boolean}       event.complete  true if value is well-formed and potentially complete.
      * @param  {String}        event.brand     brand of the card being entered e.g. 'visa' or 'amex'
@@ -561,7 +544,7 @@
     validate() {
       const isValid = this.isComplete && !this.isEmpty && !this.hasError;
       if (!isValid) {
-        this._setError({message: "Credit card information is invalid."});
+        this._setError({message: this.invalidCardMessage});
       }
       return isValid;
     }
@@ -587,11 +570,11 @@
     }
 
     /**
-     * Submit credit card information to generate a token
+     * Submit credit card information to generate a source
      * @param  {Event} event Submit event.
      */
     submit(event) {
-      this.stripe.createToken(this.card, this.cardData)
+      this.stripe.createSource(this.card, this.cardData)
         .then(this.handleResponse.bind(this))
         .catch(this.handleError.bind(this));
     }
